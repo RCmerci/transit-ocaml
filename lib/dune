@@ -1,0 +1,4 @@
+(library
+ (name transit)
+ (public_name transit)
+ (libraries yojson))
