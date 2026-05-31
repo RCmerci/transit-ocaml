@@ -1,4 +1,4 @@
 (library
  (name transit)
  (public_name transit)
- (libraries yojson))
+ (libraries edn_ocaml yojson))

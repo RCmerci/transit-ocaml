@@ -4,6 +4,7 @@ synopsis: "Transit JSON reader and writer for OCaml"
 depends: [
   "dune" {>= "3.13"}
   "ocaml" {>= "5.0"}
+  "edn_ocaml"
   "yojson"
   "odoc" {with-doc}
 ]
@@ -20,4 +21,7 @@ build: [
     "@runtest" {with-test}
     "@doc" {with-doc}
   ]
+]
+pin-depends: [
+  ["edn_ocaml.dev" "git+https://github.com/RCmerci/edn-ocaml.git"]
 ]

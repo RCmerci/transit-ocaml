@@ -26,6 +26,8 @@ module Json = struct
     | Quote of value
     | Tagged of string * value
 
+  exception Decode_error of string
+
   type writer = {
     mode : mode;
     cache : (string, string) Hashtbl.t;
@@ -230,11 +232,99 @@ module Json = struct
 
   let to_string ?mode value = to_yojson ?mode value |> Yojson.Safe.to_string
 
-  type reader = { mutable cache : string array }
-
-  exception Decode_error of string
-
   let decode_error message = raise (Decode_error message)
+
+  let iarray_to_list render values =
+    Iarray.fold_right (fun value acc -> render value :: acc) values []
+
+  let edn_vector values = Edn_ocaml.Vector (Iarray.of_list values)
+  let edn_list values = Edn_ocaml.List (Iarray.of_list values)
+  let edn_set values = Edn_ocaml.Set (Iarray.of_list values)
+  let edn_map entries = Edn_ocaml.Map (Iarray.of_list entries)
+  let edn_tagged tag value = Edn_ocaml.Tagged (tag, value)
+
+  let uchar_of_string text =
+    match String.get_utf_8_uchar text 0 with
+    | decode when Uchar.utf_decode_is_valid decode ->
+        let len = Uchar.utf_decode_length decode in
+        if len = String.length text then Uchar.utf_decode_uchar decode
+        else decode_error ("Transit char must contain exactly one character: " ^ text)
+    | _ -> decode_error ("invalid Transit char: " ^ text)
+
+  let string_of_uchar uchar =
+    let buffer = Buffer.create 4 in
+    Buffer.add_utf_8_uchar buffer uchar;
+    Buffer.contents buffer
+
+  let transit_int value =
+    if is_safe_json_int value then
+      Int (Int64.to_int value)
+    else Int64 value
+
+  let rec to_edn = function
+    | Null -> Edn_ocaml.Nil
+    | Bool value -> Edn_ocaml.Bool value
+    | String text -> Edn_ocaml.String text
+    | Int value -> Edn_ocaml.Int (Int64.of_int value)
+    | Int64 value -> Edn_ocaml.Int value
+    | Float value -> Edn_ocaml.Float value
+    | Bytes text -> edn_tagged "transit/bytes" (Edn_ocaml.String text)
+    | Keyword text -> Edn_ocaml.Keyword text
+    | Symbol text -> Edn_ocaml.Symbol text
+    | Big_decimal text -> Edn_ocaml.Decimal text
+    | Big_int text -> Edn_ocaml.Bigint text
+    | Time milliseconds -> edn_tagged "transit/time" (Edn_ocaml.Int milliseconds)
+    | Uuid text -> edn_tagged "uuid" (Edn_ocaml.String text)
+    | Uri text -> edn_tagged "transit/uri" (Edn_ocaml.String text)
+    | Char text -> Edn_ocaml.Char (uchar_of_string text)
+    | Array values -> edn_vector (List.map to_edn values)
+    | Map entries -> edn_map (List.map (fun (key, value) -> (to_edn key, to_edn value)) entries)
+    | Set values -> edn_set (List.map to_edn values)
+    | List values -> edn_list (List.map to_edn values)
+    | Quote value -> edn_tagged "transit/quote" (to_edn value)
+    | Tagged (tag, value) -> edn_tagged tag (to_edn value)
+
+  let int64_of_edn tag = function
+    | Edn_ocaml.Int value -> value
+    | value ->
+        decode_error
+          (Printf.sprintf "%s tag expects an integer, got %s" tag
+             (Edn_ocaml.to_edn_string value))
+
+  let string_of_edn tag = function
+    | Edn_ocaml.String value -> value
+    | value ->
+        decode_error
+          (Printf.sprintf "%s tag expects a string, got %s" tag
+             (Edn_ocaml.to_edn_string value))
+
+  let rec of_edn = function
+    | Edn_ocaml.Nil -> Null
+    | Edn_ocaml.Bool value -> Bool value
+    | Edn_ocaml.String text -> String text
+    | Edn_ocaml.Char uchar -> Char (string_of_uchar uchar)
+    | Edn_ocaml.Symbol text -> Symbol text
+    | Edn_ocaml.Keyword text -> Keyword text
+    | Edn_ocaml.Int value -> transit_int value
+    | Edn_ocaml.Bigint text -> Big_int text
+    | Edn_ocaml.Float value -> Float value
+    | Edn_ocaml.Decimal text -> Big_decimal text
+    | Edn_ocaml.List values -> List (iarray_to_list of_edn values)
+    | Edn_ocaml.Vector values -> Array (iarray_to_list of_edn values)
+    | Edn_ocaml.Map entries ->
+        Map
+          (iarray_to_list
+             (fun (key, value) -> (of_edn key, of_edn value))
+             entries)
+    | Edn_ocaml.Set values -> Set (iarray_to_list of_edn values)
+    | Edn_ocaml.Tagged ("transit/bytes", value) -> Bytes (string_of_edn "transit/bytes" value)
+    | Edn_ocaml.Tagged ("transit/time", value) -> Time (int64_of_edn "transit/time" value)
+    | Edn_ocaml.Tagged ("uuid", value) -> Uuid (string_of_edn "uuid" value)
+    | Edn_ocaml.Tagged ("transit/uri", value) -> Uri (string_of_edn "transit/uri" value)
+    | Edn_ocaml.Tagged ("transit/quote", value) -> Quote (of_edn value)
+    | Edn_ocaml.Tagged (tag, value) -> Tagged (tag, of_edn value)
+
+  type reader = { mutable cache : string array }
 
   let cache_code_to_index text =
     match String.length text with
@@ -442,6 +532,6 @@ module Json = struct
     | `Variant (tag, None) -> Tagged (tag, Null)
     | `Variant (tag, Some value) -> Tagged (tag, read reader value)
 
-  let from_yojson json = read { cache = [||] } json
-  let from_string text = Yojson.Safe.from_string text |> from_yojson
+  let of_yojson json = read { cache = [||] } json
+  let of_string text = Yojson.Safe.from_string text |> of_yojson
 end

@@ -9,4 +9,5 @@
  (synopsis "Transit JSON reader and writer for OCaml")
  (depends
   (ocaml (>= 5.0))
+  edn_ocaml
   yojson))

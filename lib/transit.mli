@@ -38,9 +38,17 @@ module Json : sig
   (** Encode a Transit value as a JSON string. *)
   val to_string : ?mode:mode -> value -> string
 
+  (** Convert a Transit value to an EDN value. Transit values without a native
+      EDN representation are encoded as tagged EDN values. *)
+  val to_edn : value -> Edn_ocaml.t
+
   (** Decode a Transit value from a Yojson value. *)
-  val from_yojson : Yojson.Safe.t -> value
+  val of_yojson : Yojson.Safe.t -> value
 
   (** Decode a Transit value from a JSON string. *)
-  val from_string : string -> value
+  val of_string : string -> value
+
+  (** Convert an EDN value to a Transit value. Recognized tagged EDN values are
+      decoded back to their Transit-specific representations. *)
+  val of_edn : Edn_ocaml.t -> value
 end

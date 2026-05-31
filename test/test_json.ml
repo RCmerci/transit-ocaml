@@ -1,4 +1,5 @@
 module Json = Transit.Json
+module Edn = Edn_ocaml
 open Json
 
 let checks_run = ref 0
@@ -11,12 +12,49 @@ let check name expected actual =
          expected actual)
 
 let write ?mode value = Json.to_string ?mode value
-let read text = Json.from_string text
+let read text = Json.of_string text
+
+let rec pp_value = function
+  | Null -> "Null"
+  | Bool value -> Printf.sprintf "Bool %b" value
+  | String value -> Printf.sprintf "String %S" value
+  | Int value -> Printf.sprintf "Int %d" value
+  | Int64 value -> Printf.sprintf "Int64 %Ld" value
+  | Float value -> Printf.sprintf "Float %.17g" value
+  | Bytes value -> Printf.sprintf "Bytes %S" value
+  | Keyword value -> Printf.sprintf "Keyword %S" value
+  | Symbol value -> Printf.sprintf "Symbol %S" value
+  | Big_decimal value -> Printf.sprintf "Big_decimal %S" value
+  | Big_int value -> Printf.sprintf "Big_int %S" value
+  | Time value -> Printf.sprintf "Time %Ld" value
+  | Uuid value -> Printf.sprintf "Uuid %S" value
+  | Uri value -> Printf.sprintf "Uri %S" value
+  | Char value -> Printf.sprintf "Char %S" value
+  | Array values ->
+      Printf.sprintf "Array [%s]" (String.concat "; " (List.map pp_value values))
+  | Map entries ->
+      let pp_entry (key, value) = Printf.sprintf "%s => %s" (pp_value key) (pp_value value) in
+      Printf.sprintf "Map [%s]" (String.concat "; " (List.map pp_entry entries))
+  | Set values ->
+      Printf.sprintf "Set [%s]" (String.concat "; " (List.map pp_value values))
+  | List values ->
+      Printf.sprintf "List [%s]" (String.concat "; " (List.map pp_value values))
+  | Quote value -> Printf.sprintf "Quote (%s)" (pp_value value)
+  | Tagged (tag, value) -> Printf.sprintf "Tagged (%S, %s)" tag (pp_value value)
 
 let check_value name expected actual =
   incr checks_run;
   if expected <> actual then
-    failwith (Printf.sprintf "check failed: %s" name)
+    failwith
+      (Printf.sprintf "check failed: %s\nexpected: %s\nactual:   %s" name
+         (pp_value expected) (pp_value actual))
+
+let check_edn name expected actual =
+  incr checks_run;
+  if expected <> actual then
+    failwith
+      (Printf.sprintf "check failed: %s\nexpected: %s\nactual:   %s" name
+         (Edn.to_edn_string expected) (Edn.to_edn_string actual))
 
 let check_float name expected = function
   | Float actual when Float.equal expected actual -> incr checks_run
@@ -180,6 +218,116 @@ let test_read_composites () =
   check_value "read verbose tagged value" (Tagged ("point", Array [ Int 10; Int 20 ]))
     (read "{\"~#point\":[10,20]}")
 
+let ia values = Iarray.of_list values
+
+let test_to_edn () =
+  check_edn "to edn native values"
+    (Edn.Map
+       (ia
+          [
+            (Edn.Keyword "name", Edn.String "Ada");
+            (Edn.Keyword "active", Edn.Bool true);
+            (Edn.Keyword "none", Edn.Nil);
+            (Edn.Keyword "score", Edn.Int 42L);
+            (Edn.Keyword "large", Edn.Int 9_007_199_254_740_992L);
+            (Edn.Keyword "decimal", Edn.Decimal "1.20");
+            (Edn.Keyword "bigint", Edn.Bigint "12345678901234567890");
+            (Edn.Keyword "roles", Edn.Vector (ia [ Edn.String "admin"; Edn.String "dev" ]));
+            (Edn.Keyword "items", Edn.List (ia [ Edn.Int 1L; Edn.Int 2L ]));
+            (Edn.Keyword "flags", Edn.Set (ia [ Edn.Keyword "fast"; Edn.Keyword "safe" ]));
+          ]))
+    (Json.to_edn
+       (Map
+          [
+            (Keyword "name", String "Ada");
+            (Keyword "active", Bool true);
+            (Keyword "none", Null);
+            (Keyword "score", Int 42);
+            (Keyword "large", Int64 9_007_199_254_740_992L);
+            (Keyword "decimal", Big_decimal "1.20");
+            (Keyword "bigint", Big_int "12345678901234567890");
+            (Keyword "roles", Array [ String "admin"; String "dev" ]);
+            (Keyword "items", List [ Int 1; Int 2 ]);
+            (Keyword "flags", Set [ Keyword "fast"; Keyword "safe" ]);
+          ]));
+  check_edn "to edn extension values"
+    (Edn.Vector
+       (ia
+          [
+            Edn.Char (Uchar.of_char 'x');
+            Edn.Tagged ("transit/bytes", Edn.String "hi");
+            Edn.Tagged ("transit/time", Edn.Int 123_456_789L);
+            Edn.Tagged ("uuid", Edn.String "531a379e-31bb-4ce1-8690-158dceb64be6");
+            Edn.Tagged ("transit/uri", Edn.String "https://example.com");
+            Edn.Tagged ("transit/quote", Edn.String "literal");
+            Edn.Tagged ("point", Edn.Vector (ia [ Edn.Int 10L; Edn.Int 20L ]));
+          ]))
+    (Json.to_edn
+       (Array
+          [
+            Char "x";
+            Bytes "hi";
+            Time 123_456_789L;
+            Uuid "531a379e-31bb-4ce1-8690-158dceb64be6";
+            Uri "https://example.com";
+            Quote (String "literal");
+            Tagged ("point", Array [ Int 10; Int 20 ]);
+          ]))
+
+let test_of_edn () =
+  check_value "of edn native values"
+    (Map
+       [
+         (Keyword "name", String "Ada");
+         (Keyword "active", Bool true);
+         (Keyword "none", Null);
+         (Keyword "score", Int 42);
+         (Keyword "large", Int64 9_007_199_254_740_992L);
+         (Keyword "decimal", Big_decimal "1.20");
+         (Keyword "bigint", Big_int "12345678901234567890");
+         (Keyword "roles", Array [ String "admin"; String "dev" ]);
+         (Keyword "items", List [ Int 1; Int 2 ]);
+         (Keyword "flags", Set [ Keyword "fast"; Keyword "safe" ]);
+       ])
+    (Json.of_edn
+       (Edn.Map
+          (ia
+             [
+               (Edn.Keyword "name", Edn.String "Ada");
+               (Edn.Keyword "active", Edn.Bool true);
+               (Edn.Keyword "none", Edn.Nil);
+               (Edn.Keyword "score", Edn.Int 42L);
+               (Edn.Keyword "large", Edn.Int 9_007_199_254_740_992L);
+               (Edn.Keyword "decimal", Edn.Decimal "1.20");
+               (Edn.Keyword "bigint", Edn.Bigint "12345678901234567890");
+               (Edn.Keyword "roles", Edn.Vector (ia [ Edn.String "admin"; Edn.String "dev" ]));
+               (Edn.Keyword "items", Edn.List (ia [ Edn.Int 1L; Edn.Int 2L ]));
+               (Edn.Keyword "flags", Edn.Set (ia [ Edn.Keyword "fast"; Edn.Keyword "safe" ]));
+             ])));
+  check_value "of edn extension values"
+    (Array
+       [
+         Char "x";
+         Bytes "hi";
+         Time 123_456_789L;
+         Uuid "531a379e-31bb-4ce1-8690-158dceb64be6";
+         Uri "https://example.com";
+         Quote (String "literal");
+         Tagged ("point", Array [ Int 10; Int 20 ]);
+       ])
+    (Json.of_edn
+       (Edn.Vector
+          (ia
+             [
+               Edn.Char (Uchar.of_char 'x');
+               Edn.Tagged ("transit/bytes", Edn.String "hi");
+               Edn.Tagged ("transit/time", Edn.Int 123_456_789L);
+               Edn.Tagged ("uuid", Edn.String "531a379e-31bb-4ce1-8690-158dceb64be6");
+               Edn.Tagged ("transit/uri", Edn.String "https://example.com");
+               Edn.Tagged ("transit/quote", Edn.String "literal");
+               Edn.Tagged ("point", Edn.Vector (ia [ Edn.Int 10L; Edn.Int 20L ]));
+             ])))
+
 let () =
   test_ground_scalars ();
   test_stringable_map_keys ();
@@ -193,4 +341,6 @@ let () =
   test_read_maps ();
   test_read_cache ();
   test_read_composites ();
+  test_to_edn ();
+  test_of_edn ();
   Printf.printf "ok - %d checks\n" !checks_run

@@ -17,7 +17,7 @@ let payload =
     ]
 
 let json = Transit.Json.to_string payload
-let decoded = Transit.Json.from_string json
+let decoded = Transit.Json.of_string json
 ```
 
 Normal JSON mode writes maps as Transit map arrays and enables Transit caching.
