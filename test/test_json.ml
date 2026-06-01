@@ -218,24 +218,37 @@ let test_read_composites () =
   check_value "read verbose tagged value" (Tagged ("point", Array [ Int 10; Int 20 ]))
     (read "{\"~#point\":[10,20]}")
 
+let any value = Edn.Any value
 let ia values = Iarray.of_list values
+let edn_nil = any Edn.Nil
+let edn_bool value = any (Edn.Bool value)
+let edn_string value = any (Edn.String value)
+let edn_char value = any (Edn.Char value)
+let edn_keyword value = any (Edn.Keyword value)
+let edn_int value = any (Edn.Int value)
+let edn_bigint value = any (Edn.Bigint value)
+let edn_decimal value = any (Edn.Decimal value)
+let edn_list values = any (Edn.List (ia values))
+let edn_vector values = any (Edn.Vector (ia values))
+let edn_set values = any (Edn.Set (ia values))
+let edn_map entries = any (Edn.Map (ia entries))
+let edn_tagged tag value = any (Edn.Tagged (tag, value))
 
 let test_to_edn () =
   check_edn "to edn native values"
-    (Edn.Map
-       (ia
-          [
-            (Edn.Keyword "name", Edn.String "Ada");
-            (Edn.Keyword "active", Edn.Bool true);
-            (Edn.Keyword "none", Edn.Nil);
-            (Edn.Keyword "score", Edn.Int 42L);
-            (Edn.Keyword "large", Edn.Int 9_007_199_254_740_992L);
-            (Edn.Keyword "decimal", Edn.Decimal "1.20");
-            (Edn.Keyword "bigint", Edn.Bigint "12345678901234567890");
-            (Edn.Keyword "roles", Edn.Vector (ia [ Edn.String "admin"; Edn.String "dev" ]));
-            (Edn.Keyword "items", Edn.List (ia [ Edn.Int 1L; Edn.Int 2L ]));
-            (Edn.Keyword "flags", Edn.Set (ia [ Edn.Keyword "fast"; Edn.Keyword "safe" ]));
-          ]))
+    (edn_map
+       [
+         (edn_keyword "name", edn_string "Ada");
+         (edn_keyword "active", edn_bool true);
+         (edn_keyword "none", edn_nil);
+         (edn_keyword "score", edn_int 42L);
+         (edn_keyword "large", edn_int 9_007_199_254_740_992L);
+         (edn_keyword "decimal", edn_decimal "1.20");
+         (edn_keyword "bigint", edn_bigint "12345678901234567890");
+         (edn_keyword "roles", edn_vector [ edn_string "admin"; edn_string "dev" ]);
+         (edn_keyword "items", edn_list [ edn_int 1L; edn_int 2L ]);
+         (edn_keyword "flags", edn_set [ edn_keyword "fast"; edn_keyword "safe" ]);
+       ])
     (Json.to_edn
        (Map
           [
@@ -251,17 +264,16 @@ let test_to_edn () =
             (Keyword "flags", Set [ Keyword "fast"; Keyword "safe" ]);
           ]));
   check_edn "to edn extension values"
-    (Edn.Vector
-       (ia
-          [
-            Edn.Char (Uchar.of_char 'x');
-            Edn.Tagged ("transit/bytes", Edn.String "hi");
-            Edn.Tagged ("transit/time", Edn.Int 123_456_789L);
-            Edn.Tagged ("uuid", Edn.String "531a379e-31bb-4ce1-8690-158dceb64be6");
-            Edn.Tagged ("transit/uri", Edn.String "https://example.com");
-            Edn.Tagged ("transit/quote", Edn.String "literal");
-            Edn.Tagged ("point", Edn.Vector (ia [ Edn.Int 10L; Edn.Int 20L ]));
-          ]))
+    (edn_vector
+       [
+         edn_char (Uchar.of_char 'x');
+         edn_tagged "transit/bytes" (edn_string "hi");
+         edn_tagged "transit/time" (edn_int 123_456_789L);
+         edn_tagged "uuid" (edn_string "531a379e-31bb-4ce1-8690-158dceb64be6");
+         edn_tagged "transit/uri" (edn_string "https://example.com");
+         edn_tagged "transit/quote" (edn_string "literal");
+         edn_tagged "point" (edn_vector [ edn_int 10L; edn_int 20L ]);
+       ])
     (Json.to_edn
        (Array
           [
@@ -290,20 +302,19 @@ let test_of_edn () =
          (Keyword "flags", Set [ Keyword "fast"; Keyword "safe" ]);
        ])
     (Json.of_edn
-       (Edn.Map
-          (ia
-             [
-               (Edn.Keyword "name", Edn.String "Ada");
-               (Edn.Keyword "active", Edn.Bool true);
-               (Edn.Keyword "none", Edn.Nil);
-               (Edn.Keyword "score", Edn.Int 42L);
-               (Edn.Keyword "large", Edn.Int 9_007_199_254_740_992L);
-               (Edn.Keyword "decimal", Edn.Decimal "1.20");
-               (Edn.Keyword "bigint", Edn.Bigint "12345678901234567890");
-               (Edn.Keyword "roles", Edn.Vector (ia [ Edn.String "admin"; Edn.String "dev" ]));
-               (Edn.Keyword "items", Edn.List (ia [ Edn.Int 1L; Edn.Int 2L ]));
-               (Edn.Keyword "flags", Edn.Set (ia [ Edn.Keyword "fast"; Edn.Keyword "safe" ]));
-             ])));
+       (edn_map
+          [
+            (edn_keyword "name", edn_string "Ada");
+            (edn_keyword "active", edn_bool true);
+            (edn_keyword "none", edn_nil);
+            (edn_keyword "score", edn_int 42L);
+            (edn_keyword "large", edn_int 9_007_199_254_740_992L);
+            (edn_keyword "decimal", edn_decimal "1.20");
+            (edn_keyword "bigint", edn_bigint "12345678901234567890");
+            (edn_keyword "roles", edn_vector [ edn_string "admin"; edn_string "dev" ]);
+            (edn_keyword "items", edn_list [ edn_int 1L; edn_int 2L ]);
+            (edn_keyword "flags", edn_set [ edn_keyword "fast"; edn_keyword "safe" ]);
+          ]));
   check_value "of edn extension values"
     (Array
        [
@@ -316,17 +327,16 @@ let test_of_edn () =
          Tagged ("point", Array [ Int 10; Int 20 ]);
        ])
     (Json.of_edn
-       (Edn.Vector
-          (ia
-             [
-               Edn.Char (Uchar.of_char 'x');
-               Edn.Tagged ("transit/bytes", Edn.String "hi");
-               Edn.Tagged ("transit/time", Edn.Int 123_456_789L);
-               Edn.Tagged ("uuid", Edn.String "531a379e-31bb-4ce1-8690-158dceb64be6");
-               Edn.Tagged ("transit/uri", Edn.String "https://example.com");
-               Edn.Tagged ("transit/quote", Edn.String "literal");
-               Edn.Tagged ("point", Edn.Vector (ia [ Edn.Int 10L; Edn.Int 20L ]));
-             ])))
+       (edn_vector
+          [
+            edn_char (Uchar.of_char 'x');
+            edn_tagged "transit/bytes" (edn_string "hi");
+            edn_tagged "transit/time" (edn_int 123_456_789L);
+            edn_tagged "uuid" (edn_string "531a379e-31bb-4ce1-8690-158dceb64be6");
+            edn_tagged "transit/uri" (edn_string "https://example.com");
+            edn_tagged "transit/quote" (edn_string "literal");
+            edn_tagged "point" (edn_vector [ edn_int 10L; edn_int 20L ]);
+          ]))
 
 let () =
   test_ground_scalars ();

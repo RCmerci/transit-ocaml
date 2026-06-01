@@ -237,11 +237,14 @@ module Json = struct
   let iarray_to_list render values =
     Iarray.fold_right (fun value acc -> render value :: acc) values []
 
-  let edn_vector values = Edn_ocaml.Vector (Iarray.of_list values)
-  let edn_list values = Edn_ocaml.List (Iarray.of_list values)
-  let edn_set values = Edn_ocaml.Set (Iarray.of_list values)
-  let edn_map entries = Edn_ocaml.Map (Iarray.of_list entries)
-  let edn_tagged tag value = Edn_ocaml.Tagged (tag, value)
+  let edn_any value = Edn_ocaml.Any value
+  let edn_string value = edn_any (Edn_ocaml.String value)
+  let edn_int value = edn_any (Edn_ocaml.Int value)
+  let edn_vector values = edn_any (Edn_ocaml.Vector (Iarray.of_list values))
+  let edn_list values = edn_any (Edn_ocaml.List (Iarray.of_list values))
+  let edn_set values = edn_any (Edn_ocaml.Set (Iarray.of_list values))
+  let edn_map entries = edn_any (Edn_ocaml.Map (Iarray.of_list entries))
+  let edn_tagged tag value = edn_any (Edn_ocaml.Tagged (tag, value))
 
   let uchar_of_string text =
     match String.get_utf_8_uchar text 0 with
@@ -262,21 +265,21 @@ module Json = struct
     else Int64 value
 
   let rec to_edn = function
-    | Null -> Edn_ocaml.Nil
-    | Bool value -> Edn_ocaml.Bool value
-    | String text -> Edn_ocaml.String text
-    | Int value -> Edn_ocaml.Int (Int64.of_int value)
-    | Int64 value -> Edn_ocaml.Int value
-    | Float value -> Edn_ocaml.Float value
-    | Bytes text -> edn_tagged "transit/bytes" (Edn_ocaml.String text)
-    | Keyword text -> Edn_ocaml.Keyword text
-    | Symbol text -> Edn_ocaml.Symbol text
-    | Big_decimal text -> Edn_ocaml.Decimal text
-    | Big_int text -> Edn_ocaml.Bigint text
-    | Time milliseconds -> edn_tagged "transit/time" (Edn_ocaml.Int milliseconds)
-    | Uuid text -> edn_tagged "uuid" (Edn_ocaml.String text)
-    | Uri text -> edn_tagged "transit/uri" (Edn_ocaml.String text)
-    | Char text -> Edn_ocaml.Char (uchar_of_string text)
+    | Null -> edn_any Edn_ocaml.Nil
+    | Bool value -> edn_any (Edn_ocaml.Bool value)
+    | String text -> edn_string text
+    | Int value -> edn_int (Int64.of_int value)
+    | Int64 value -> edn_int value
+    | Float value -> edn_any (Edn_ocaml.Float value)
+    | Bytes text -> edn_tagged "transit/bytes" (edn_string text)
+    | Keyword text -> edn_any (Edn_ocaml.Keyword text)
+    | Symbol text -> edn_any (Edn_ocaml.Symbol text)
+    | Big_decimal text -> edn_any (Edn_ocaml.Decimal text)
+    | Big_int text -> edn_any (Edn_ocaml.Bigint text)
+    | Time milliseconds -> edn_tagged "transit/time" (edn_int milliseconds)
+    | Uuid text -> edn_tagged "uuid" (edn_string text)
+    | Uri text -> edn_tagged "transit/uri" (edn_string text)
+    | Char text -> edn_any (Edn_ocaml.Char (uchar_of_string text))
     | Array values -> edn_vector (List.map to_edn values)
     | Map entries -> edn_map (List.map (fun (key, value) -> (to_edn key, to_edn value)) entries)
     | Set values -> edn_set (List.map to_edn values)
@@ -285,20 +288,21 @@ module Json = struct
     | Tagged (tag, value) -> edn_tagged tag (to_edn value)
 
   let int64_of_edn tag = function
-    | Edn_ocaml.Int value -> value
+    | Edn_ocaml.Any (Edn_ocaml.Int value) -> value
     | value ->
         decode_error
           (Printf.sprintf "%s tag expects an integer, got %s" tag
              (Edn_ocaml.to_edn_string value))
 
   let string_of_edn tag = function
-    | Edn_ocaml.String value -> value
+    | Edn_ocaml.Any (Edn_ocaml.String value) -> value
     | value ->
         decode_error
           (Printf.sprintf "%s tag expects a string, got %s" tag
              (Edn_ocaml.to_edn_string value))
 
-  let rec of_edn = function
+  let rec of_edn (Edn_ocaml.Any value) =
+    match value with
     | Edn_ocaml.Nil -> Null
     | Edn_ocaml.Bool value -> Bool value
     | Edn_ocaml.String text -> String text

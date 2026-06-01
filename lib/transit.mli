@@ -40,7 +40,7 @@ module Json : sig
 
   (** Convert a Transit value to an EDN value. Transit values without a native
       EDN representation are encoded as tagged EDN values. *)
-  val to_edn : value -> Edn_ocaml.t
+  val to_edn : value -> Edn_ocaml.any
 
   (** Decode a Transit value from a Yojson value. *)
   val of_yojson : Yojson.Safe.t -> value
@@ -50,5 +50,5 @@ module Json : sig
 
   (** Convert an EDN value to a Transit value. Recognized tagged EDN values are
       decoded back to their Transit-specific representations. *)
-  val of_edn : Edn_ocaml.t -> value
+  val of_edn : Edn_ocaml.any -> value
 end
